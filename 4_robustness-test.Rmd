@@ -1,0 +1,249 @@
+---
+title: "robustness test"
+output: html_document
+date: "2023-06-03"
+---
+
+# 1. setup
+```{r message=FALSE, warning=FALSE}
+# load packages
+library(tidyverse)   # process dataframe
+library(lme4)        # lme model
+library(lmerTest)    # lme model test
+library(MuMIn)       # model selection
+library(effects)     # present effects
+library(AICcmodavg)  # calculate AIC
+library(patchwork)   # arrange plot
+library(broom.mixed) # summarize estimation
+library(RColorBrewer)# visualize
+
+# load data
+data <- read_rds("./data/EoMPII_data-for-analysis.rds")
+```
+
+# lag effect
+
+
+```{r}
+
+# data_response
+data_response <- data
+data_response <- data_response %>% 
+  select(country:year, fyear, life.expectancy, under5.mortality)
+
+# data_explanatory
+data_explanatory <- data
+## plus 1 year to data_explanatory -> explanatory in year 2002 will be +1 to match year 2003 in data_response
+data_explanatory <- data_explanatory %>% 
+  mutate(year = year + 1) %>%
+  select(country:year, s_gdp.per.capita:s_aid.volatility.disbursement)
+
+# merge data 
+data_lag1 <- inner_join(data_response, data_explanatory)
+
+```
+## life.expectancy
+### fit model
+```{r}
+# commitment
+lag1.le.cmt <- lmer(life.expectancy ~ s_gdp.growth + s_commitment.total + 
+                   s_aid.volatility.commitment*s_institutional.index +
+                   s_population.density + s_urban.population + 
+                   s_basic.sanitation.service + s_incidence.tuberculosis +
+                   (1 | country) + 
+                   (1 | fyear), data = data_lag1, REML = T)
+summary(lag1.le.cmt)
+
+# disbursement
+lag1.le.dbm <- lmer(life.expectancy ~ s_gdp.growth + s_disbursement.total + 
+                   s_aid.volatility.disbursement*s_institutional.index +
+                   s_population.density + s_urban.population + 
+                   s_basic.sanitation.service + s_incidence.tuberculosis +
+                   (1 | country) + 
+                   (1 | fyear), data = data_lag1, REML = T)
+```
+
+### estimation summary
+#### commitment
+```{r}
+# commitment 
+lag1.le.cmt_sum <- tidy(lag1.le.cmt)
+lag1.le.cmt_sum <- lag1.le.cmt_sum %>% 
+  mutate(term = if_else(effect == "ran_pars", group, term)) %>%
+  select(effect, term, estimate, std.error, p.value) %>%
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2),
+         p.value = round(p.value, 2)) %>%
+  mutate(p.value.note = if_else(p.value < 0.01, "***", # add p.value note
+                                                       if_else(p.value < 0.05, "**",
+                                                               if_else(p.value < 0.1, "*", "")))) %>%
+  mutate(estimate.sum = paste0(estimate, p.value.note,
+                                                          "\n", 
+                                                          "(",std.error,")")) 
+
+# select: effect, term, and model estimation
+lag1.le.cmt_sum <- lag1.le.cmt_sum %>% 
+  mutate(aid.commitment = if_else(effect == "fixed", estimate.sum, as.character(estimate))) %>%
+  select(effect, term, aid.commitment)
+
+```
+#### disbursment
+```{r include=FALSE}
+# disbursement 
+lag1.le.dbm_sum <- tidy(lag1.le.dbm)
+lag1.le.dbm_sum <- lag1.le.dbm_sum %>% 
+  mutate(term = if_else(effect == "ran_pars", group, term)) %>%
+  select(effect, term, estimate, std.error, p.value) %>%
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2),
+         p.value = round(p.value, 2)) %>%
+  mutate(p.value.note = if_else(p.value < 0.01, "***", # add p.value note
+                                                       if_else(p.value < 0.05, "**",
+                                                               if_else(p.value < 0.1, "*", "")))) %>%
+  mutate(estimate.sum = paste0(estimate, p.value.note,
+                                                          "\n", 
+                                                          "(",std.error,")")) 
+
+# select: effect, term, and model estimation
+lag1.le.dbm_sum <- lag1.le.dbm_sum %>% 
+  mutate(aid.disbursement = if_else(effect == "fixed", estimate.sum, as.character(estimate))) %>%
+  select(effect, term, aid.disbursement)
+```
+
+#### summary
+```{r echo=FALSE}
+# aid commitment
+lag1.le.cmt_sum <- lag1.le.cmt_sum  %>%
+  mutate(index = if_else(term %in% c("s_commitment.total",
+                                     "s_aid.volatility.commitment",
+                                     "s_institutional.index",
+                                     "s_aid.volatility.commitment:s_institutional.index"),
+                         2, 1),
+         term = if_else(term == "s_commitment.total", "s_aid",
+                        if_else(term == "s_aid.volatility.commitment", "s_aid.volatility",
+                                if_else(term == "s_aid.volatility.commitment:s_institutional.index",
+                                        "s_aid.volatility:s_institutional.index", term)))
+  )
+
+# aid disbursement
+lag1.le.dbm_sum <- lag1.le.dbm_sum  %>%
+  mutate(index = if_else(term %in% c("s_disbursement.total",
+                                     "s_aid.volatility.disbursement",
+                                     "s_institutional.index",
+                                     "s_aid.volatility.disbursement:s_institutional.index"),
+                         2, 1),
+         term = if_else(term == "s_disbursement.total", "s_aid",
+                        if_else(term == "s_aid.volatility.disbursement", "s_aid.volatility",
+                                if_else(term == "s_aid.volatility.disbursement:s_institutional.index",
+                                        "s_aid.volatility:s_institutional.index", term)))
+  )
+
+# merge
+lag1.le_sum <- full_join(lag1.le.cmt_sum, lag1.le.dbm_sum) %>% arrange(effect, index) %>% select(- index)
+
+writexl::write_xlsx(lag1.le_sum, "./output/life.expectancy_lag1.summary.xlsx")
+
+```
+## under5.mortality
+### fit model
+```{r}
+# commitment
+lag1.u5.cmt <- lmer(under5.mortality ~ s_gdp.growth + s_commitment.total + 
+                   s_aid.volatility.commitment*s_institutional.index +
+                   s_population.density + s_urban.population + 
+                   s_basic.sanitation.service + s_incidence.tuberculosis +
+                   (1 | country) + 
+                   (1 | fyear), data = data_lag1, REML = T)
+summary(lag1.u5.cmt)
+
+# disbursement
+lag1.u5.dbm <- lmer(under5.mortality ~ s_gdp.growth + s_disbursement.total + 
+                   s_aid.volatility.disbursement*s_institutional.index +
+                   s_population.density + s_urban.population + 
+                   s_basic.sanitation.service + s_incidence.tuberculosis +
+                   (1 | country) + 
+                   (1 | fyear), data = data_lag1, REML = T)
+```
+
+### estimation summary
+#### commitment
+```{r}
+# commitment 
+lag1.u5.cmt_sum <- tidy(lag1.u5.cmt)
+lag1.u5.cmt_sum <- lag1.u5.cmt_sum %>% 
+  mutate(term = if_else(effect == "ran_pars", group, term)) %>%
+  select(effect, term, estimate, std.error, p.value) %>%
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2),
+         p.value = round(p.value, 2)) %>%
+  mutate(p.value.note = if_else(p.value < 0.01, "***", # add p.value note
+                                                       if_else(p.value < 0.05, "**",
+                                                               if_else(p.value < 0.1, "*", "")))) %>%
+  mutate(estimate.sum = paste0(estimate, p.value.note,
+                                                          "\n", 
+                                                          "(",std.error,")")) 
+
+# select: effect, term, and model estimation
+lag1.u5.cmt_sum <- lag1.u5.cmt_sum %>% 
+  mutate(aid.commitment = if_else(effect == "fixed", estimate.sum, as.character(estimate))) %>%
+  select(effect, term, aid.commitment)
+
+```
+#### disbursment
+```{r include=FALSE}
+# disbursement 
+lag1.u5.dbm_sum <- tidy(lag1.u5.dbm)
+lag1.u5.dbm_sum <- lag1.u5.dbm_sum %>% 
+  mutate(term = if_else(effect == "ran_pars", group, term)) %>%
+  select(effect, term, estimate, std.error, p.value) %>%
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2),
+         p.value = round(p.value, 2)) %>%
+  mutate(p.value.note = if_else(p.value < 0.01, "***", # add p.value note
+                                                       if_else(p.value < 0.05, "**",
+                                                               if_else(p.value < 0.1, "*", "")))) %>%
+  mutate(estimate.sum = paste0(estimate, p.value.note,
+                                                          "\n", 
+                                                          "(",std.error,")")) 
+
+# select: effect, term, and model estimation
+lag1.u5.dbm_sum <- lag1.u5.dbm_sum %>% 
+  mutate(aid.disbursement = if_else(effect == "fixed", estimate.sum, as.character(estimate))) %>%
+  select(effect, term, aid.disbursement)
+```
+
+#### summary
+```{r echo=FALSE}
+# aid commitment
+lag1.u5.cmt_sum <- lag1.u5.cmt_sum  %>%
+  mutate(index = if_else(term %in% c("s_commitment.total",
+                                     "s_aid.volatility.commitment",
+                                     "s_institutional.index",
+                                     "s_aid.volatility.commitment:s_institutional.index"),
+                         2, 1),
+         term = if_else(term == "s_commitment.total", "s_aid",
+                        if_else(term == "s_aid.volatility.commitment", "s_aid.volatility",
+                                if_else(term == "s_aid.volatility.commitment:s_institutional.index",
+                                        "s_aid.volatility:s_institutional.index", term)))
+  )
+
+# aid disbursement
+lag1.u5.dbm_sum <- lag1.u5.dbm_sum  %>%
+  mutate(index = if_else(term %in% c("s_disbursement.total",
+                                     "s_aid.volatility.disbursement",
+                                     "s_institutional.index",
+                                     "s_aid.volatility.disbursement:s_institutional.index"),
+                         2, 1),
+         term = if_else(term == "s_disbursement.total", "s_aid",
+                        if_else(term == "s_aid.volatility.disbursement", "s_aid.volatility",
+                                if_else(term == "s_aid.volatility.disbursement:s_institutional.index",
+                                        "s_aid.volatility:s_institutional.index", term)))
+  )
+
+# merge
+lag1.u5_sum <- full_join(lag1.u5.cmt_sum, lag1.u5.dbm_sum) %>% arrange(effect, index) %>% select(- index)
+
+writexl::write_xlsx(lag1.u5_sum, "./output/under5.mortality_lag1.summary.xlsx")
+
+```
+

@@ -1,0 +1,886 @@
+---
+title: "3_summary_updated"
+author: "Giang Pham"
+date: "2023-05-30"
+output: html_document
+---
+
+# 1. SETUP
+
+```{r message=FALSE, warning=FALSE}
+# load packages
+library(tidyverse)   # process dataframe
+library(lme4)        # lme model
+library(lmerTest)    # lme model test
+library(MuMIn)       # model selection
+library(effects)     # present effects
+library(AICcmodavg)  # calculate AIC
+library(patchwork)   # arrange plot
+library(broom.mixed) # summarize estimation
+library(RColorBrewer)# visualize
+
+# load data
+data <- read_rds("./data/EoMPII_data-for-analysis.rds")
+```
+
+# 3. UNDER-5 MORTALITY
+
+## 3.1. Baseline: the determinants of under 5 mortality
+
+### 3.1.1. Fit model
+
+```{r}
+m.u5 <- lmer(under5.mortality ~ s_gdp.growth +
+                   s_population.density + s_urban.population + 
+                   s_basic.sanitation.service + s_incidence.tuberculosis +
+                   (1 | country) + 
+                   (1 | fyear), data = data, REML = T)
+summary(m.u5)
+```
+
+### 3.1.2. Plot effect
+
+#### gdp.growth
+
+##### average effect
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# get prediction 
+df_gdp <- unique(select(data, gdp.growth, s_gdp.growth)) %>% round(2)
+pred_gdp <- as.data.frame(Effect(c('s_gdp.growth'), 
+                                     m.u5, 
+                                     xlevels = list(s_gdp.growth = df_gdp$s_gdp.growth))) %>%
+  left_join(df_gdp)
+
+# summary
+tibble(fit_at.min = mean(filter(pred_gdp, gdp.growth == min(gdp.growth))$fit),
+       fit_at.max = mean(filter(pred_gdp, gdp.growth == max(gdp.growth))$fit),
+       fit_diff.percent = (fit_at.max - fit_at.min)/fit_at.min*100) %>% round(2)
+
+# plot
+p_gdp <- ggplot() + 
+  geom_line(data = pred_gdp, aes(x = gdp.growth, 
+                                     y = fit)) +
+  geom_ribbon(data = pred_gdp, aes(x = gdp.growth,
+                                       ymin = lower,
+                                       ymax = upper),
+              alpha = 0.3) +
+  theme_classic() +
+  ylab("Under-5 mortality") +
+  xlab("GDP growth (%)")
+p_gdp
+```
+
+##### effect by country
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# plot for each country
+data_pred_gdp <- tibble(under5.mortality = NA,
+                            fyear = NA,
+                            s_gdp.growth = data$s_gdp.growth,
+                            gdp.growth = data$gdp.growth,
+                            country = data$country,
+                            s_commitment.total = 0,
+                            s_aid.volatility.commitment = 0,
+                            s_institutional.index = 0,
+                            s_population.density = 0,
+                            s_urban.population = 0,
+                            s_basic.sanitation.service = 0,
+                            s_access.electricity = 0,
+                            s_incidence.tuberculosis = 0,
+                            index = "pred") 
+
+data$index <- "est"
+data_pred_gdp <- bind_rows(data, data_pred_gdp)
+
+# get prediction from the model
+data_pred_gdp$pred <- predict(m.u5, newdata=data_pred_gdp, allow.new.levels=T)
+
+##extract pred data only
+data_pred_gdp <- data_pred_gdp %>% filter(index == "pred")
+
+# plot
+ggplot(data = data_pred_gdp, 
+       aes(x = gdp.growth, 
+           y = pred)) + 
+  geom_line() +
+  theme_classic() + 
+  facet_wrap(~ country) +
+  ylab("Under-5 mortality") +
+  xlab("GDP growth (%)")
+
+
+```
+
+#### population.density
+
+##### average effect
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+df_pop.den <- unique(select(data, population.density, s_population.density)) %>%
+  round(2)
+pred_pop.den <- as.data.frame(Effect(c('s_population.density'), 
+                                     m.u5, 
+                                     xlevels = list(s_population.density = df_pop.den$s_population.density))) %>%
+  left_join(df_pop.den)
+
+# summary
+tibble(fit_at.min = mean(filter(pred_pop.den, population.density == min(population.density))$fit),
+       fit_at.max = mean(filter(pred_pop.den, population.density == max(population.density))$fit),
+       fit_diff.percent = (fit_at.max - fit_at.min)/fit_at.min*100) %>% round(2)
+
+# plot
+p_pop.den <- ggplot() + 
+  geom_line(data = pred_pop.den, aes(x = population.density, 
+                                     y = fit)) +
+  geom_ribbon(data = pred_pop.den, aes(x = population.density,
+                                       ymin = lower,
+                                       ymax = upper),
+              alpha = 0.3) +
+  theme_classic() +
+  ylab("Under-5 mortality") +
+  xlab("Population density (people per sq. km)")
+
+p_pop.den
+
+```
+
+##### effect by country
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# plot for each country
+data_pred_pop.den <- tibble(under5.mortality = NA,
+                            fyear = NA,
+                            s_gdp.growth = 0,
+                            country = data$country,
+                            s_commitment.total = 0,
+                            s_aid.volatility.commitment = 0,
+                            s_institutional.index = 0,
+                            population.density = data$population.density,
+                            s_population.density = data$s_population.density,
+                            s_urban.population = 0,
+                            s_basic.sanitation.service = 0,
+                            s_access.electricity = 0,
+                            s_incidence.tuberculosis = 0,
+                            index = "pred") 
+
+data$index <- "est"
+data_pred_pop.den <- bind_rows(data, data_pred_pop.den)
+
+# get prediction from the model
+data_pred_pop.den$pred <- predict(m.u5, newdata=data_pred_pop.den, allow.new.levels=T)
+
+##extract pred data only
+data_pred_pop.den <- data_pred_pop.den %>% filter(index == "pred")
+
+# plot
+ggplot(data = data_pred_pop.den, 
+       aes(x = population.density, 
+           y = pred)) + 
+  geom_line() +
+  theme_classic() + 
+  facet_wrap(~ country) +
+  ylab("Under-5 mortality") +
+  xlab("Population density (people per sq. km)")
+
+```
+
+#### incidence.tuberculosis
+
+##### average effect
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# get prediction 
+df_tb <- unique(select(data, incidence.tuberculosis, s_incidence.tuberculosis)) %>% round(2)
+pred_tb <- as.data.frame(Effect(c('s_incidence.tuberculosis'), 
+                                m.u5, 
+                                xlevels = list(s_incidence.tuberculosis = df_tb$s_incidence.tuberculosis))) %>%
+  left_join(df_tb)
+
+# summary
+tibble(fit_at.min = mean(filter(pred_tb, incidence.tuberculosis == min(incidence.tuberculosis))$fit),
+       fit_at.max = mean(filter(pred_tb, incidence.tuberculosis == max(incidence.tuberculosis))$fit),
+       fit_diff.percent = (fit_at.max - fit_at.min)/fit_at.min*100) %>% round(2)
+
+
+# plot
+p_tb <- ggplot() + 
+  geom_line(data = pred_tb, aes(x = incidence.tuberculosis, 
+                                y = fit)) +
+  geom_ribbon(data = pred_tb, aes(x = incidence.tuberculosis,
+                                  ymin = lower,
+                                  ymax = upper),
+              alpha = 0.3) +
+  theme_classic() +
+  ylab("Under-5 mortality") +
+  xlab("Incidence of tuberculosis (per 100,000 people)")
+
+p_tb
+
+```
+
+##### effect by country
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# plot for each country
+data_pred_tb <- tibble(under5.mortality = NA,
+                       fyear = NA,
+                       s_gdp.growth = 0,
+                       country = data$country,
+                       s_commitment.total = 0,
+                       s_aid.volatility.commitment = 0,
+                       s_institutional.index = 0,
+                       s_population.density = 0,
+                       s_urban.population = 0,
+                       s_basic.sanitation.service = 0,
+                       s_access.electricity = 0,
+                       incidence.tuberculosis = data$incidence.tuberculosis,
+                       s_incidence.tuberculosis = data$s_incidence.tuberculosis,
+                       index = "pred") 
+
+data$index <- "est"
+data_pred_tb <- bind_rows(data, data_pred_tb)
+
+# get prediction from the model
+data_pred_tb$pred <- predict(m.u5, newdata=data_pred_tb, allow.new.levels=T)
+
+##extract pred data only
+data_pred_tb <- data_pred_tb %>% filter(index == "pred")
+
+# plot
+ggplot(data = data_pred_tb, 
+       aes(x = incidence.tuberculosis, 
+           y = pred)) + 
+  geom_line() +
+  theme_classic() + 
+  facet_wrap(~ country) +
+  ylab("Under-5 mortality") +
+  xlab("Incidence of tuberculosis (per 100,000 people)")
+
+```
+#### basic.sanitation.service
+##### average effect
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# get prediction 
+df_bss <- unique(select(data, basic.sanitation.service, s_basic.sanitation.service)) %>% round(2)
+pred_bss <- as.data.frame(Effect(c('s_basic.sanitation.service'), 
+                                m.u5, 
+                                xlevels = list(s_basic.sanitation.service = df_bss$s_basic.sanitation.service))) %>%
+  left_join(df_bss)
+
+# summary
+tibble(fit_at.min = mean(filter(pred_bss, basic.sanitation.service == min(basic.sanitation.service))$fit),
+       fit_at.max = mean(filter(pred_bss, basic.sanitation.service == max(basic.sanitation.service))$fit),
+       fit_diff.percent = (fit_at.max - fit_at.min)/fit_at.min*100) %>% round(2)
+
+
+# plot
+p_bss <- ggplot() + 
+  geom_line(data = pred_bss, aes(x = basic.sanitation.service, 
+                                y = fit)) +
+  geom_ribbon(data = pred_bss, aes(x = basic.sanitation.service,
+                                  ymin = lower,
+                                  ymax = upper),
+              alpha = 0.3) +
+  theme_classic() +
+  ylab("Under-5 mortality") +
+  xlab("% of population using at least basic sanitation services")
+
+p_bss
+
+```
+
+
+
+#### merge plot
+
+```{r echo=FALSE}
+p_patch <- (p_gdp | p_pop.den | p_bss) + plot_annotation(tag_levels = 'A') & ylab(NULL)
+
+# Use the tag label as an x-axis label
+p_patch <- wrap_elements(panel = p_patch) +
+  labs(tag = "Under-5 mortality") +
+  theme(plot.tag = element_text(size = rel(1), angle = 90),
+        plot.tag.position = "left")
+
+ggsave(filename = "./output/under5.mortality_determinants.png", plot = p_patch,
+       width = 3600,
+       height = 1200,
+       units = "px",
+       dpi = 300)
+
+```
+
+## 2.2. Aid commitment
+
+### 2.2.1. Fit model
+
+```{r}
+m.u5.cmt <- lmer(under5.mortality ~ s_gdp.growth + s_commitment.total + 
+                   s_aid.volatility.commitment*s_institutional.index +
+                   s_population.density + s_urban.population + 
+                   s_basic.sanitation.service + s_incidence.tuberculosis +
+                   (1 | country) + 
+                   (1 | fyear), data = data, REML = T)
+
+summary(m.u5.cmt)
+```
+
+### 2.1.2. Plot effects
+
+#### commitment.total
+
+##### average effect
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# average effect
+df_cmt <- unique(select(data, commitment.total, s_commitment.total)) %>% 
+  round(2)
+pred_cmt <- as.data.frame(Effect(c('s_commitment.total'), 
+                                          m.u5.cmt, 
+                                          xlevels = list(s_commitment.total = df_cmt$s_commitment.total))) %>%
+  left_join(df_cmt)
+
+# summary
+tibble(fit_at.min = mean(filter(pred_cmt, commitment.total == min(commitment.total))$fit),
+       fit_at.max = mean(filter(pred_cmt, commitment.total == max(commitment.total))$fit),
+       fit_diff.percent = (fit_at.max - fit_at.min)/fit_at.min*100) %>% round(2)
+
+# plot
+p_cmt <- ggplot() + 
+  geom_line(data = pred_cmt, aes(x = commitment.total, 
+                                          y = fit)) +
+  geom_ribbon(data = pred_cmt, aes(x = commitment.total,
+                                            ymin = lower,
+                                            ymax = upper),
+              alpha = 0.3) +
+  theme_classic() +
+  ylab("Under-5 mortality") +
+  xlab("Aid commitment (millions 2021 USD)")
+
+p_cmt
+```
+
+##### effect by country
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# effect by country
+data_pred_cmt <- tibble(under5.mortality = NA,
+                       fyear = NA,
+                       s_gdp.growth = 0,
+                       country = data$country,
+                       commitment.total = data$commitment.total,
+                       s_commitment.total = data$s_commitment.total,
+                       s_aid.volatility.commitment = 0,
+                       s_institutional.index = 0,
+                       s_population.density = 0,
+                       s_urban.population = 0,
+                       s_basic.sanitation.service = 0,
+                       s_access.electricity = 0,
+                       s_incidence.tuberculosis = 0,
+                       index = "pred") 
+
+data$index <- "est"
+data_pred_cmt <- bind_rows(data, data_pred_cmt)
+
+# get prediction from the model
+data_pred_cmt$pred <- predict(m.u5.cmt, newdata=data_pred_cmt, allow.new.levels=T)
+
+##extract pred data only
+data_pred_cmt <- data_pred_cmt %>% filter(index == "pred")
+
+# plot
+ggplot(data = data_pred_cmt, 
+       aes(x = commitment.total, 
+           y = pred)) + 
+  geom_line() +
+  theme_classic() + 
+  facet_wrap(~ country) +
+  ylab("Under-5 mortality") +
+  xlab("Aid commitment (millions 2021 USD)")
+
+```
+
+#### aid.volatility.commitment and institutional.index
+
+##### average effect
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# setting
+## set institutional.index in 3 level: min, mean, max - low, middle, high
+df_institutional <- tibble(s_institutional.index = c(min(data$s_institutional.index),
+                                                  0,
+                                                  max(data$s_institutional.index)),
+                           institutional.level = factor(c("low", "middle", "high"), levels = c("low", "middle", "high")) )
+df_institutional <- df_institutional %>% mutate(s_institutional.index = round(s_institutional.index, 2))
+
+# get prediction 
+df_aid.vol <- unique(select(data, aid.volatility.commitment, s_aid.volatility.commitment)) %>% 
+  round(2)
+pred_aid.vol_inst <- as.data.frame(Effect(c('s_aid.volatility.commitment', 's_institutional.index'), 
+                                          m.u5.cmt, 
+                                 xlevels = list(s_aid.volatility.commitment = df_aid.vol$s_aid.volatility.commitment,
+                                                s_institutional.index = df_institutional$s_institutional.index)))
+pred_aid.vol_inst <- left_join(pred_aid.vol_inst, df_institutional)
+pred_aid.vol_inst <- left_join(pred_aid.vol_inst, df_aid.vol)
+
+# summary
+range_aid.vol <- c(min(pred_aid.vol_inst$aid.volatility.commitment),
+                   max(pred_aid.vol_inst$aid.volatility.commitment))
+unique(filter(pred_aid.vol_inst, aid.volatility.commitment %in% range_aid.vol)) %>% 
+  mutate(range = if_else(s_aid.volatility.commitment < 0, "fit_at.min", "fit_at.max")) %>% 
+  select(fit, range, institutional.level) %>% 
+  pivot_wider(names_from = range, values_from = fit) %>% 
+  mutate(fit_diff.percent = (fit_at.max - fit_at.min)/fit_at.min*100) %>% 
+  mutate(fit_at.min = round(fit_at.min, 2),
+         fit_at.max = round(fit_at.max, 2),
+         fit_diff.percent = round(fit_diff.percent, 2))
+
+
+# plot
+p_cmt.vol <- ggplot() + 
+  geom_line(data = pred_aid.vol_inst, aes(x = aid.volatility.commitment, 
+                                    y = fit,
+                                    color = institutional.level)) +
+  geom_ribbon(data = pred_aid.vol_inst, aes(x = aid.volatility.commitment,
+                                      ymin = lower,
+                                      ymax = upper,
+                                      fill = institutional.level),
+              alpha = 0.3) +
+  theme_classic() +
+  ylab("Under-5 mortality") +
+  xlab("Aid commitment volatility") +
+  labs(fill = "Institutional quality",
+       color = "Institutional quality")
+
+p_cmt.vol
+```
+
+##### effect by country
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# ref: https://tmalsburg.github.io/predict-vs-simulate.html
+
+# create pred data
+## set range aid.vol and inst - min, mean, max
+range_aid.vol <- c(min(data$s_aid.volatility.commitment),
+                   0,
+                   max(data$s_aid.volatility.commitment)) %>% round(2)
+range_inst <- c(min(data$s_institutional.index),
+                0,
+                max(data$s_institutional.index)) %>% round(2)
+
+## each country (out of 39), there are 9 combination of aid.vol and inst
+data_pred_aid.vol_inst <- tibble(under5.mortality = NA,
+                                 fyear = NA,
+                                 s_gdp.growth = 0,
+                                 country = rep(data$country, 3),
+                                 s_commitment.total = 0,
+                                 aid.volatility.commitment = rep(data$aid.volatility.commitment, 3) ,
+                                 s_aid.volatility.commitment = rep(data$s_aid.volatility.commitment, 3),
+                                 s_institutional.index = rep(range_inst,
+                                                             each = nrow(data)),
+                                 s_population.density = 0,
+                                 s_urban.population = 0,
+                                 s_basic.sanitation.service = 0,
+                                 s_access.electricity = 0,
+                                 s_incidence.tuberculosis = 0,
+                                 index = "pred"
+) %>% 
+  left_join(df_institutional)
+
+data$index <- "est"
+data_pred_aid.vol_inst <- bind_rows(data, data_pred_aid.vol_inst)
+
+# get prediction from the model
+data_pred_aid.vol_inst$pred <- predict(m.u5.cmt, newdata=data_pred_aid.vol_inst, allow.new.levels=T)
+
+##extract pred data only
+data_pred_aid.vol_inst <- data_pred_aid.vol_inst %>% filter(index == "pred")
+
+# plot
+ggplot(data = data_pred_aid.vol_inst, 
+       aes(x = aid.volatility.commitment, 
+           y = pred, 
+           color = institutional.level)) + 
+  geom_line() +
+  theme_classic() + 
+  facet_wrap(~ country) +
+  ylab("Under-5 mortality") +
+  xlab("Aid commitment volatility")
+
+ggplot(data = data_pred_aid.vol_inst, aes(x = aid.volatility.commitment, y = pred, color = country)) +
+  geom_line() +
+  theme_classic() + 
+  theme(legend.position = "none") + 
+  facet_wrap(~ institutional.level) +
+  ylab("Under-5 mortality") +
+  xlab("Aid commitment volatility") +
+  labs(fill = "Institutional quality",
+       color = "Institutional quality")
+
+```
+
+## 2.3. Aid disbursement
+
+### 2.2.1. Fit model
+
+```{r}
+m.u5.dbm <- lmer(under5.mortality ~ s_gdp.growth + s_disbursement.total + 
+                   s_aid.volatility.disbursement*s_institutional.index +
+                   s_population.density + s_urban.population + 
+                   s_basic.sanitation.service + s_incidence.tuberculosis +
+                   (1 | country) + 
+                   (1 | fyear), data = data, REML = T)
+
+summary(m.u5.dbm)
+```
+
+### 2.1.2. Plot effects
+
+#### disbursement.total
+
+##### average effect
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# average effect
+df_dbm <- unique(select(data, disbursement.total, s_disbursement.total)) %>% 
+  round(2)
+pred_dbm <- as.data.frame(Effect(c('s_disbursement.total'), 
+                                          m.u5.dbm, 
+                                          xlevels = list(s_disbursement.total = df_dbm$s_disbursement.total))) %>% 
+  left_join(df_dbm)
+
+# summary
+tibble(fit_at.min = mean(filter(pred_dbm, disbursement.total == min(disbursement.total))$fit),
+       fit_at.max = mean(filter(pred_dbm, disbursement.total == max(disbursement.total))$fit),
+       fit_diff.percent = (fit_at.max - fit_at.min)/fit_at.min*100) %>% round(2)
+
+# plot
+p_dbm <- ggplot() + 
+  geom_line(data = pred_dbm, aes(x = disbursement.total, 
+                                          y = fit)) +
+  geom_ribbon(data = pred_dbm, aes(x = disbursement.total,
+                                            ymin = lower,
+                                            ymax = upper),
+              alpha = 0.3) +
+  theme_classic() +
+  ylab("Under-5 mortality") +
+  xlab("Aid disbursement (millions 2021 USD)")
+
+p_dbm
+```
+
+##### effect by country
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# effect by country
+data_pred_dbm <- tibble(under5.mortality = NA,
+                       fyear = NA,
+                       s_gdp.growth = 0,
+                       country = data$country,
+                       disbursement.total = data$disbursement.total,
+                       s_disbursement.total = data$s_disbursement.total,
+                       s_aid.volatility.disbursement = 0,
+                       s_institutional.index = 0,
+                       s_population.density = 0,
+                       s_urban.population = 0,
+                       s_basic.sanitation.service = 0,
+                       s_access.electricity = 0,
+                       s_incidence.tuberculosis = 0,
+                       index = "pred") 
+
+data$index <- "est"
+data_pred_dbm <- bind_rows(data, data_pred_dbm)
+
+# get prediction from the model
+data_pred_dbm$pred <- predict(m.u5.dbm, newdata=data_pred_dbm, allow.new.levels=T)
+
+##extract pred data only
+data_pred_dbm <- data_pred_dbm %>% filter(index == "pred")
+
+# plot
+ggplot(data = data_pred_dbm, 
+       aes(x = disbursement.total, 
+           y = pred)) + 
+  geom_line() +
+  theme_classic() + 
+  facet_wrap(~ country) +
+  ylab("Under-5 mortality") +
+  xlab("Aid disbursement (millions 2021 USD)")
+
+```
+
+#### aid.volatility.commitment and institutional.index
+
+##### average effect
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# setting
+## set institutional.index in 3 level: min, mean, max - low, middle, high
+df_institutional <- tibble(s_institutional.index = c(min(data$s_institutional.index),
+                                                  0,
+                                                  max(data$s_institutional.index)),
+                           institutional.level = factor(c("low", "middle", "high"), levels = c("low", "middle", "high")) )
+df_institutional <- df_institutional %>% mutate(s_institutional.index = round(s_institutional.index, 2))
+
+# get prediction 
+df_aid.vol <- unique(select(data, aid.volatility.disbursement, s_aid.volatility.disbursement)) %>% 
+  round(2)
+pred_aid.vol_inst <- as.data.frame(Effect(c('s_aid.volatility.disbursement', 's_institutional.index'), 
+                                          m.u5.dbm, 
+                                 xlevels = list(s_aid.volatility.disbursement = df_aid.vol$s_aid.volatility.disbursement,
+                                                s_institutional.index = df_institutional$s_institutional.index)))
+pred_aid.vol_inst <- left_join(pred_aid.vol_inst, df_institutional)
+pred_aid.vol_inst <- left_join(pred_aid.vol_inst, df_aid.vol)
+
+# summary
+range_aid.vol <- c(min(pred_aid.vol_inst$aid.volatility.disbursement),
+                   max(pred_aid.vol_inst$aid.volatility.disbursement))
+unique(filter(pred_aid.vol_inst, aid.volatility.disbursement %in% range_aid.vol)) %>% 
+  mutate(range = if_else(s_aid.volatility.disbursement < 0, "fit_at.min", "fit_at.max")) %>% 
+  select(fit, range, institutional.level) %>% 
+  pivot_wider(names_from = range, values_from = fit) %>% 
+  mutate(fit_diff.percent = (fit_at.max - fit_at.min)/fit_at.min*100) %>% 
+  mutate(fit_at.min = round(fit_at.min, 2),
+         fit_at.max = round(fit_at.max, 2),
+         fit_diff.percent = round(fit_diff.percent, 2))
+
+# plot
+p_dbm.vol <- ggplot() + 
+  geom_line(data = pred_aid.vol_inst, aes(x = aid.volatility.disbursement, 
+                                    y = fit,
+                                    color = institutional.level)) +
+  geom_ribbon(data = pred_aid.vol_inst, aes(x = aid.volatility.disbursement,
+                                      ymin = lower,
+                                      ymax = upper,
+                                      fill = institutional.level),
+              alpha = 0.3) +
+  theme_classic() +
+  ylab("Under-5 mortality") +
+  xlab("Aid disbursement volatility") +
+  labs(fill = "Institutional quality",
+       color = "Institutional quality")
+
+p_dbm.vol
+
+```
+
+##### effect by country
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# ref: https://tmalsburg.github.io/predict-vs-simulate.html
+
+# create pred data
+## set range aid.vol and inst - min, mean, max
+range_inst <- c(min(data$s_institutional.index),
+                0,
+                max(data$s_institutional.index)) %>% round(2)
+
+## each country (out of 39), there are 9 combination of aid.vol and inst
+data_pred_aid.vol_inst <- tibble(under5.mortality = NA,
+                                 fyear = NA,
+                                 s_gdp.growth = 0,
+                                 country = rep(data$country, 3),
+                                 s_disbursement.total = 0,
+                                 aid.volatility.disbursement = rep(data$aid.volatility.disbursement, 3) ,
+                                 s_aid.volatility.disbursement = rep(data$s_aid.volatility.disbursement, 3),
+                                 s_institutional.index = rep(range_inst,
+                                                             each = nrow(data)),
+                                 s_population.density = 0,
+                                 s_urban.population = 0,
+                                 s_basic.sanitation.service = 0,
+                                 s_access.electricity = 0,
+                                 s_incidence.tuberculosis = 0,
+                                 index = "pred"
+) %>% 
+  left_join(df_institutional)
+
+data$index <- "est"
+data_pred_aid.vol_inst <- bind_rows(data, data_pred_aid.vol_inst)
+
+# get prediction from the model
+data_pred_aid.vol_inst$pred <- predict(m.u5.dbm, newdata=data_pred_aid.vol_inst, allow.new.levels=T)
+
+##extract pred data only
+data_pred_aid.vol_inst <- data_pred_aid.vol_inst %>% filter(index == "pred")
+
+# plot
+ggplot(data = data_pred_aid.vol_inst, 
+       aes(x = aid.volatility.disbursement, 
+           y = pred, 
+           color = institutional.level)) + 
+  geom_line() +
+  theme_classic() + 
+  facet_wrap(~ country) +
+  ylab("Under-5 mortality") + 
+  xlab("Aid disbursement volatility") +
+  labs(fill = "Institutional quality",
+       color = "Institutional quality")
+
+ggplot(data = data_pred_aid.vol_inst, aes(x = aid.volatility.disbursement, y = pred, color = country)) +
+  geom_line() +
+  theme_classic() + 
+  theme(legend.position = "none") + 
+  facet_wrap(~ institutional.level) +
+  ylab("Under-5 mortality") +
+  xlab("Aid disbursement volatility") 
+
+```
+
+## 2.4. Merge plot aid
+
+### aid
+
+```{r echo=FALSE}
+p_patch_aid <- (p_cmt | p_dbm) +
+  plot_annotation(tag_levels = 'A') & ylab(NULL)
+
+# Use the tag label as an x-axis label
+p_patch_aid <- wrap_elements(panel = p_patch_aid) +
+  labs(tag = "Under-5 mortality") +
+  theme(plot.tag = element_text(size = rel(1), angle = 90),
+        plot.tag.position = "left")
+
+ggsave(filename = "./output/under5.mortality_aid.png", plot = p_patch_aid,
+       width = 2400,
+       height = 1200,
+       units = "px",
+       dpi = 300)
+
+```
+
+### aid volatility
+
+```{r echo=FALSE}
+p_patch_aid.vol <- (p_cmt.vol | p_dbm.vol) + 
+  plot_annotation(tag_levels = 'A') +
+  plot_layout(guides = "collect") & ylab(NULL)
+
+# Use the tag label as an x-axis label
+p_patch_aid.vol <- wrap_elements(panel = p_patch_aid.vol) +
+  labs(tag = "Under-5 mortality") +
+  theme(plot.tag = element_text(size = rel(1), angle = 90),
+        plot.tag.position = "left") 
+  
+
+ggsave(filename = "./output/under5.mortality_aid.vol.png", plot = p_patch_aid.vol,
+       width = 3000,
+       height = 1200,
+       units = "px",
+       dpi = 300)
+
+```
+
+## 2.5. Estimation summary
+
+### baseline
+
+```{r include=FALSE}
+m.u5_sum <- tidy(m.u5)
+m.u5_sum <- m.u5_sum %>% 
+  mutate(term = if_else(effect == "ran_pars", group, term)) %>%
+  select(effect, term, estimate, std.error, p.value) %>%
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2),
+         p.value = round(p.value, 2)) %>%
+  mutate(p.value.note = if_else(p.value < 0.01, "***", # add p.value note
+                                                       if_else(p.value < 0.05, "**",
+                                                               if_else(p.value < 0.1, "*", "")))) %>%
+  mutate(estimate.sum = paste0(estimate, p.value.note,
+                                                          "\n", 
+                                                          "(",std.error,")")) 
+
+# select: effect, term, and model estimation
+m.u5_sum <- m.u5_sum %>% 
+  mutate(baseline = if_else(effect == "fixed", estimate.sum, as.character(estimate))) %>%
+  select(effect, term, baseline)
+                                                   
+```
+
+### aid.commitment
+
+```{r include=FALSE}
+m.u5.cmt_sum <- tidy(m.u5.cmt)
+m.u5.cmt_sum <- m.u5.cmt_sum %>% 
+  mutate(term = if_else(effect == "ran_pars", group, term)) %>%
+  select(effect, term, estimate, std.error, p.value) %>%
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2),
+         p.value = round(p.value, 2)) %>%
+  mutate(p.value.note = if_else(p.value < 0.01, "***", # add p.value note
+                                                       if_else(p.value < 0.05, "**",
+                                                               if_else(p.value < 0.1, "*", "")))) %>%
+  mutate(estimate.sum = paste0(estimate, p.value.note,
+                                                          "\n", 
+                                                          "(",std.error,")")) 
+
+# select: effect, term, and model estimation
+m.u5.cmt_sum <- m.u5.cmt_sum %>% 
+  mutate(aid.commitment = if_else(effect == "fixed", estimate.sum, as.character(estimate))) %>%
+  select(effect, term, aid.commitment)
+  
+                                                   
+```
+
+### aid.disbursement
+
+```{r include=FALSE}
+m.u5.dbm_sum <- tidy(m.u5.dbm)
+m.u5.dbm_sum <- m.u5.dbm_sum %>% 
+  mutate(term = if_else(effect == "ran_pars", group, term)) %>%
+  select(effect, term, estimate, std.error, p.value) %>%
+  mutate(estimate = round(estimate, 2),
+         std.error = round(std.error, 2),
+         p.value = round(p.value, 2)) %>%
+  mutate(p.value.note = if_else(p.value < 0.01, "***", # add p.value note
+                                                       if_else(p.value < 0.05, "**",
+                                                               if_else(p.value < 0.1, "*", "")))) %>%
+  mutate(estimate.sum = paste0(estimate, p.value.note,
+                                                          "\n", 
+                                                          "(",std.error,")")) 
+
+# select: effect, term, and model estimation
+m.u5.dbm_sum <- m.u5.dbm_sum %>% 
+  mutate(aid.disbursement = if_else(effect == "fixed", estimate.sum, as.character(estimate))) %>%
+  select(effect, term, aid.disbursement)
+```
+
+### summary
+
+```{r echo=FALSE}
+# aid commitment
+u5_sum_cmt <- full_join(m.u5_sum, m.u5.cmt_sum)  %>%
+  mutate(index = if_else(term %in% c("s_commitment.total",
+                                     "s_aid.volatility.commitment",
+                                     "s_institutional.index",
+                                     "s_aid.volatility.commitment:s_institutional.index"),
+                         2, 1),
+         term = if_else(term == "s_commitment.total", "s_aid",
+                        if_else(term == "s_aid.volatility.commitment", "s_aid.volatility",
+                                if_else(term == "s_aid.volatility.commitment:s_institutional.index",
+                                        "s_aid.volatility:s_institutional.index", term)))
+  )
+
+# aid disbursement
+u5_sum_dbm <- full_join(m.u5_sum, m.u5.dbm_sum)  %>%
+  mutate(index = if_else(term %in% c("s_disbursement.total",
+                                     "s_aid.volatility.disbursement",
+                                     "s_institutional.index",
+                                     "s_aid.volatility.disbursement:s_institutional.index"),
+                         2, 1),
+         term = if_else(term == "s_disbursement.total", "s_aid",
+                        if_else(term == "s_aid.volatility.disbursement", "s_aid.volatility",
+                                if_else(term == "s_aid.volatility.disbursement:s_institutional.index",
+                                        "s_aid.volatility:s_institutional.index", term)))
+  )
+
+# merge
+u5_sum <- full_join(u5_sum_cmt, u5_sum_dbm) %>% arrange(effect, index) %>% select(- index)
+u5_sum
+
+#writexl::write_xlsx(le_sum, "./output/under5.mortality_model.summary.xlsx")
+
+```

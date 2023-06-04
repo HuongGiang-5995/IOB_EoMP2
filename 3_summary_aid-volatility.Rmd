@@ -1,0 +1,69 @@
+---
+title: "aid volatility"
+author: "Giang Pham"
+date: "2023-06-04"
+output: html_document
+---
+
+# 1. SETUP
+
+```{r message=FALSE, warning=FALSE}
+# load packages
+library(tidyverse)   # process dataframe
+library(lme4)        # lme model
+library(lmerTest)    # lme model test
+library(MuMIn)       # model selection
+library(effects)     # present effects
+library(AICcmodavg)  # calculate AIC
+library(patchwork)   # arrange plot
+library(broom.mixed) # summarize estimation
+library(RColorBrewer)# visualize
+
+# load data
+data <- read_rds("./data/EoMPII_data-for-analysis.rds")
+```
+
+# aid volatility - commitment
+```{r}
+p_cmt <- ggplot() + 
+  geom_line(data = data, aes(x = year, 
+                                y = s_aid.volatility.commitment)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  facet_wrap(~ country) +
+  theme_classic() +
+  ylab("Aid commitment volatility (scaled)") +
+  xlab("Year")
+p_cmt
+```
+
+```{r}
+ggsave(filename = "./output/aid.volatility_commitment.png", plot = p_cmt,
+       width = 3600,
+       height = 3600,
+       units = "px",
+       dpi = 300)
+
+```
+
+# aid volatility - disbursement
+```{r}
+p_dbm <- ggplot() + 
+  geom_line(data = data, aes(x = year, 
+                                y = s_aid.volatility.disbursement)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  facet_wrap(~ country) +
+  theme_classic() +
+  ylab("Aid disbursement volatility (scaled)") +
+  xlab("Year")
+p_dbm
+```
+
+```{r}
+ggsave(filename = "./output/aid.volatility_disbursement.png", plot = p_dbm,
+       width = 3600,
+       height = 3600,
+       units = "px",
+       dpi = 300)
+
+```
+
